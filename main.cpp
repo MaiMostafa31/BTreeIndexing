@@ -2,13 +2,16 @@
 #include "node.h"
 using namespace std;
 
-int getLeaf(const char* filename,node& root, int id){
+pair<int,vector<int>> getLeaf(const char* filename,node& root, int id){
     fstream Btree;
     Btree.open(filename, ios::in);
+    vector<int>v;
     int target = -1, i;
+    bool flag = false;
     for (i = 0; i < root.size and root.val[i]!=-1; i+=2) {
         if(root.val[i]>=id)
         {
+            flag = true;
             target = root.val[i+1];
             Btree.seekg(target*sizeof(root), ios::beg);
             node n;
@@ -16,12 +19,13 @@ int getLeaf(const char* filename,node& root, int id){
             while(n.nonLeaf)
             {
                 int j;
-                for (j = 0; j < n.size and n.val[i]!= -1; j+=2) {
-                    if(n.val[i]>=id)
+                for (j = 0; j < n.size and n.val[j]!= -1; j+=2) {
+                    if(n.val[j]>=id)
                     {
-                        target = n.val[i+1];
+                        target = n.val[j+1];
                         Btree.seekg(target*sizeof(root), ios::beg);
                         Btree.read((char*)&n,sizeof(root));
+                        break;
                     }
                 }
             }
@@ -29,7 +33,25 @@ int getLeaf(const char* filename,node& root, int id){
         }
 
     }
-    return target;
+    if(!flag){
+        v.push_back(1);
+        target = root.val[--i];
+        v.push_back(target);
+        node n;
+        Btree.seekg(target*sizeof(root), ios::beg);
+        Btree.read((char*)&n,sizeof(root));
+        while(n.nonLeaf){
+            int j;
+            for (j = 0; j < n.size and n.val[j]!= -1; j+=2) {
+                target = n.val[j+1];
+            }
+            v.push_back(target);
+            Btree.seekg(target*sizeof(root), ios::beg);
+            Btree.read((char*)&n,sizeof(root));
+
+        }
+    }
+    return {target,v};
 }
 
 void sortNode(int* arr, int indx){
@@ -43,7 +65,7 @@ void sortNode(int* arr, int indx){
         arr[i+1] = v[j].second;
     }
 }
-void split(node& root, node& node1, node& node2, int place1, int place2,int id, int ref)
+void splitRoot(node& root, node& node1, node& node2, int place1, int place2, int id, int ref)
 {
     int i;
     root.nonLeaf = 1;
@@ -120,6 +142,7 @@ int InsertNewRecordAtIndex (const char* filename, int RecordID, int Reference){
     Btree.seekg(sizeof(header), ios::beg);
     node root;
     Btree.read((char*)&root,sizeof(root));
+    //tree is empty-> no nodes
     if(header.val[0] == 1){
         header.val[0]++;
 
@@ -133,6 +156,7 @@ int InsertNewRecordAtIndex (const char* filename, int RecordID, int Reference){
         return 0;
     }
     else{
+        //tree is 1 level-> root only
         if(root.nonLeaf == 0){
             int i;
             bool flag = false;
@@ -148,6 +172,7 @@ int InsertNewRecordAtIndex (const char* filename, int RecordID, int Reference){
                     return 0;
                 }
             }
+            //tree is 1 level, root is full-> split
             if(!flag)
             {
                 int place1 = header.val[0];
@@ -159,7 +184,7 @@ int InsertNewRecordAtIndex (const char* filename, int RecordID, int Reference){
                 node node2;
                 Btree.read((char*)&node2, sizeof(node2));
                 header.val[0] = node2.val[0];
-                split(root,node1,node2,place1,place2,RecordID,Reference);
+                splitRoot(root, node1, node2, place1, place2, RecordID, Reference);
                 Btree.seekp(0, ios::beg);
                 Btree.write((char*)&header,sizeof(root));
                 Btree.seekp(sizeof(header), ios::beg);
@@ -172,9 +197,11 @@ int InsertNewRecordAtIndex (const char* filename, int RecordID, int Reference){
 
             }
         }
+        //multi-level bTree
         else
         {
-            int indx = getLeaf(filename,root,RecordID);
+            pair<int,vector<int>>vistited = getLeaf(filename,root,RecordID);
+            int indx = vistited.first;
             Btree.seekg(indx* sizeof(root),ios::beg);
             node target;
             Btree.read((char*)&target, sizeof(root));
