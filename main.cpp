@@ -107,6 +107,42 @@ splitRoot(node &root, node &node1, node &node2, int place1, int place2, int id =
 
 }
 
+bool splitLeaf(node &parent, node& tosplit, node &splitIn, int placeofsplitting) {
+    splitIn.nonLeaf = 0;
+    if (parent.val[parent.size - 1] != -1) {
+        return false;
+    }
+    vector<pair<int, int>> v;
+    for (int x = 0; x < tosplit.size; x += 2) {
+        v.emplace_back(tosplit.val[x], tosplit.val[x + 1]);
+    }
+
+    int j = 0;
+    for (j = tosplit.size / 2; j < tosplit.size; j += 2) {
+        tosplit.val[j] = -1;
+        tosplit.val[j + 1] = -1;
+    }
+    int max1 = tosplit.val[tosplit.size / 2 - 2];
+    j = 0;
+    for (int i = v.size() / 2; i < v.size(); i++) {
+        splitIn.val[j] = v[i].first;
+        splitIn.val[j + 1] = v[i].second;
+        j += 2;
+    }
+    int max2 = splitIn.val[j - 2];
+    for (int k = 0; k < parent.size; ++k) {
+        if (parent.val[k] == -1) {
+            int placeOfToSplit = parent.val[k - 1];
+            parent.val[k - 2] = max2;
+            parent.val[k - 1] = placeofsplitting;
+            parent.val[k] = max1;
+            parent.val[k + 1] = placeOfToSplit;
+            break;
+        }
+    }
+    return true;
+}
+
 void CreateIndexFileFile(const char *filename, int numberOfRecords, int m) {
     // write initial state of index file where all nodes are empty
     fstream Btree;
@@ -158,7 +194,10 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
         Btree.write((char *) &root, sizeof(root));
         Btree.close();
         return 0;
+
+
     } else {
+
         //tree is 1 level-> root only
         if (root.nonLeaf == 0) {
             int i;
@@ -198,9 +237,21 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
                 Btree.close();
 
             }
-        }
+        } else {
+
+            /*
+            1 awl e7timal nh ha insert w azbot l max
+            2 tany e7timal ny atr a split l leaf
+              tany e7timal 3ndo e7tmalen (
+            3 awl e7timal nh l parent malyan
+            4 tany e7timal nh l parent fady
+                )
+            3 3ndo e7tmalen
+            5 nh l parent non leaf
+            6 nh l parent l root
+             */
+
             //multi-level bTree
-        else {
             pair<int, vector<int>> visited = getLeaf(filename, root, RecordID);
             int indx = visited.first;
             Btree.seekg(indx * sizeof(root), ios::beg);
@@ -218,38 +269,11 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
                     break;
                 }
             }
-
-            if (flag == 0 && visited.second.size() == 2) {
-                //means node is full then go check if root has a place to split the current node
-                for (int j = 0; j < root.size; j += 2) {
-                    if (root.val[j] == -1) {
-                        //take empty node
-                        int place1 = header.val[0];
-                        Btree.seekg(header.val[0] * sizeof(header), ios::beg);
-                        node node1;
-                        Btree.read((char *) &node1, sizeof(node1));
-
-                        //take empty node
-                        int place2 = node1.val[0];
-                        Btree.seekg(node1.val[0] * sizeof(node1), ios::beg);
-                        node node2;
-                        Btree.read((char *) &node2, sizeof(node2));
-                        //update header with the next empty node
-                        header.val[0] = node2.val[0];
-                        //split
-                        splitRoot(root, node1, node2, place1, place2, RecordID, indx, true);
-
-                    }
-                }
-            }
-            else{
-
-            }
-            if(flag==1){
-                for(auto& it:visited.second){
-                    Btree.seekp(it*sizeof(root),ios::beg);
+            if (flag == 1) {
+                for (auto &it: visited.second) {
+                    Btree.seekp(it * sizeof(root), ios::beg);
                     Btree.read((char *) &target, sizeof(root));
-                    if(target.nonLeaf) {
+                    if (target.nonLeaf) {
                         int j;
                         for (j = 0; j < target.size; j += 2) {
                             if (target.val[j] == -1) {
@@ -261,13 +285,58 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
                         }
                     }
                 }
+                Btree.close();
+                return 0;
+            } else {
+                // here we need to split the leaf
+                // we got two ways
+                /// the parent of this leaf is root so we go check if root has place to split if it has we split leaf then insert again
+                /// if not then we split root then call insert again which splits leaf then call insert again which inserts
+                /// if the parent is not root then we check if it has place to split in  if it has we split if it doesnt we split its parent
+                /// and so on every time after we split we call insert
+
+                if (flag == 0 && visited.second.size() == 2) {
+                    //take empty node
+                    int place1 = header.val[0];
+                    Btree.seekg(header.val[0] * sizeof(header), ios::beg);
+                    node node1;
+                    Btree.read((char *) &node1, sizeof(node1));
+                    header.val[0] = node1.val[0];
+                    //split
+                    if (!splitLeaf(root, target, node1, place1)) {
+                        int place2 = header.val[0];
+                        Btree.seekg(header.val[0] * sizeof(header), ios::beg);
+                        node node2;
+                        Btree.read((char *) &node2, sizeof(node1));
+                        header.val[0] = node2.val[0];
+
+                        splitRoot(root,node1,node2,place1,place2);
+
+                        int place3 = header.val[0];
+                        Btree.seekg(header.val[0] * sizeof(header), ios::beg);
+                        node node3;
+                        Btree.read((char *) &node3, sizeof(node1));
+                        header.val[0] = node3.val[0];
+
+                        splitLeaf(root,target,node3,place3);
+                        Btree.close();
+                        InsertNewRecordAtIndex(filename,RecordID,Reference);
+                    }
+                }
+            }
+            try {
+                Btree.close();
+            }
+            catch (exception e){
+
             }
 
-            Btree.close();
             return 0;
         }
 
     }
+
+
     return -1;
 }
 
