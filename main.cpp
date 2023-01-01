@@ -27,6 +27,12 @@ int splitParent(node &parent, node &Gparent, int Gparentindx, node &splitIn, int
 
 int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference);
 
+pair<int,vector<int>> searchToDelete(const char *filename, int RecordID);
+
+pair<int,int> deleteFromNode(node& ToDeleteFrom,int RecordID);
+
+void DeleteRecordFromIndex (const char * filename, int RecordID);
+
 /// Declarations
 
 pair<int, vector<int>> getLeaf(const char *filename, node &root, int id) {
@@ -341,7 +347,7 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
         Btree.write((char *) &header, sizeof(header));
         Btree.write((char *) &root, sizeof(root));
         Btree.close();
-        return 0;
+        return 1;
     } else {
 
         //tree is 1 level-> root only
@@ -647,11 +653,161 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
     return -1;
 }
 
+pair<int,vector<int>> searchToDelete(const char *filename, int RecordID) {
+    pair<int,vector<int>>visited;
+    fstream Btree;
+    Btree.open(filename, ios::in);
+    Btree.seekg(0, ios::beg);
+    node header;
+    Btree.read((char *) &header, sizeof(header));
+    Btree.seekg(sizeof(header), ios::beg);
+    node root;
+    Btree.read((char *) &root, sizeof(root));
+    if(header.val[0] == -1 and root.nonLeaf == -1)
+    {
+        visited.first = -1;
+        return visited;
+    }
+    visited.second.push_back(1);
+    int ans = -1, target = -1;
+    if (!root.nonLeaf) {
+        for (int i = 0; i < root.size; i += 2) {
+            if (root.val[i] == RecordID)
+                ans = root.val[i + 1];
+        }
+    } else {
+        bool flag = false, entered = false;
+        for (int i = 0; i < root.size and root.val[i] != -1; i += 2) {
+            if (root.val[i] >= RecordID) {
+                target = root.val[i + 1];
+                visited.second.push_back(target);
+                Btree.seekg(target * sizeof(root), ios::beg);
+                node n;
+                Btree.read((char *) &n, sizeof(root));
+                while (n.nonLeaf) {
+                    entered = true;
+                    int j;
+                    for (j = 0; j < n.size and n.val[j] != -1; j += 2) {
+                        if (n.val[j] >= RecordID) {
+                            target = n.val[j + 1];
+                            Btree.seekg(target * sizeof(root), ios::beg);
+                            Btree.read((char *) &n, sizeof(root));
+                            flag = true;
+                            if(n.nonLeaf==0)
+                                visited.second.push_back(target);
+                            break;
+                        }
+                    }
+                    if (!flag) {
+                       visited.first = -1;
+                        return visited;
+                    }
+                }
+                if (flag) {
+                    for (int k = 0; k < n.size; k += 2) {
+                        if (RecordID == n.val[k])
+                        {
+                            visited.first = k;
+                            return visited;
+                        }
+
+                    }
+                }
+                if (!entered) {
+                    for (int k = 0; k < n.size; k += 2) {
+                        if (RecordID == n.val[k])
+                        {
+                            visited.first = k;
+                            return visited;
+                        }
+                    }
+                }
+            }
+
+        }
+    }
+    Btree.close();
+    return visited;
+}
+
+pair<int,int> deleteFromNode(node& ToDeleteFrom,int RecordID){
+    vector<pair<int,int>>v;
+    for (int i = 0; i < ToDeleteFrom.size and ToDeleteFrom.val[i]!=RecordID; i+=2) {
+        v.push_back({ToDeleteFrom.val[i],ToDeleteFrom.val[i+1]});
+    }
+    int j = 0,max = -1;
+    for (int i = 0; i < v.size(); ++i) {
+        ToDeleteFrom.val[j] = v[i].first;
+        ToDeleteFrom.val[j+1] = v[i].second;
+        max = v[i].first;
+        j+=2;
+    }
+    while(j<ToDeleteFrom.size)
+    {
+        ToDeleteFrom.val[j] = -1;
+        ToDeleteFrom.val[j+1] = -1;
+        j+=2;
+    }
+    return {max,v.size()};
+}
+
+void DeleteRecordFromIndex (const char * filename, int RecordID) {
+    pair<int,vector<int>> visited = searchToDelete(filename,RecordID);
+    fstream Btree;
+    Btree.open(filename, ios::in | ios::out | ios::binary);
+
+    if(visited.first==-1)
+    {
+        cout<<"Record not found"<<endl;
+        return;
+    }
+    int indxofNode = visited.second[visited.second.size()-1];
+    node ToDeleteFrom;
+    Btree.seekg(indxofNode*sizeof(ToDeleteFrom),ios::beg);
+    Btree.read((char*)&ToDeleteFrom,sizeof(ToDeleteFrom));
+    pair<int,int>result = deleteFromNode(ToDeleteFrom,RecordID);
+    if(result.second>= floor(ToDeleteFrom.size/4))
+    {
+        if(result.first<RecordID){
+            ///write new max for all visited nodes
+            node target;
+            for (auto &it: visited.second) {
+                Btree.seekp(it * sizeof(ToDeleteFrom), ios::beg);
+                Btree.read((char *) &target, sizeof(ToDeleteFrom));
+                if (target.nonLeaf) {
+                    int j;
+                    for (j = 0; j < target.size; j += 2) {
+                        if (target.val[j]== RecordID) {
+                            target.val[j] = result.first;
+                            break;
+                        }
+                    }
+                }
+            }
+            return;
+        }
+        else
+            return;
+
+    }
+    else{
+        ///underflow condition
+        if(visited.first>0)
+        {
+            ///get the sibiling before
+
+        }
+    }
+
+
+}
+
 int main() {
     string name = "btree.bin";
     const char *filename = name.c_str();
     CreateIndexFileFile(filename, 10, 5);
     DisplayIndexFileContent(filename);
+
     InsertNewRecordAtIndex(filename, 3, 12);
     InsertNewRecordAtIndex(filename, 7, 24);
     InsertNewRecordAtIndex(filename, 10, 48);
@@ -701,10 +857,79 @@ int main() {
     InsertNewRecordAtIndex(filename, 32, 240);
     DisplayIndexFileContent(filename);
 
+    DeleteRecordFromIndex(filename,10);
+    DisplayIndexFileContent(filename);
+
     cout << SearchARecord(filename, 5) << endl;
     cout << SearchARecord(filename, 1) << endl;
     cout << SearchARecord(filename, 20) << endl;
     cout << SearchARecord(filename, 19) << endl;
+    cout << SearchARecord(filename, 1) << endl;
+    cout << SearchARecord(filename, 10) << endl;
+
+//    InsertNewRecordAtIndex(filename, 100, 84);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 11, 96);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 31, 108);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 51, 120);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 71, 132);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 91, 75);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 35, 156);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 60, 168);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 94, 180);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 54, 192);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 14, 204);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 33, 217);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 40, 228);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 74, 240);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 20, 204);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 93, 217);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 13, 228);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 53, 240);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 72, 204);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 52, 217);
+//    DisplayIndexFileContent(filename);
+//
+//    InsertNewRecordAtIndex(filename, 55, 228);
+//    DisplayIndexFileContent(filename);
+
 
     return 0;
 }
