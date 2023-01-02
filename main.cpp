@@ -33,7 +33,8 @@ pair<int,int> deleteFromNode(node& ToDeleteFrom,int RecordID);
 
 void DeleteRecordFromIndex (const char * filename, int RecordID);
 
-pair<int,int> mergeNodes(node& node1,node& node2,int size1, int size2);
+int mergeNodes(node& node1,node& node2,int size1, int size2);
+void MainMenu();
 /// Declarations
 
 pair<int, vector<int>> getLeaf(const char *filename, node &root, int id) {
@@ -364,7 +365,7 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
                     Btree.write((char *) &root, sizeof(root));
                     Btree.close();
                     flag = true;
-                    return 0;
+                    return 1;
                 }
             }
             //tree is 1 level, root is full-> split
@@ -373,11 +374,15 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
                 Btree.seekg(header.val[0] * sizeof(header), ios::beg);
                 node node1;
                 Btree.read((char *) &node1, sizeof(node1));
+
                 int place2 = node1.val[0];
                 Btree.seekg(node1.val[0] * sizeof(node1), ios::beg);
                 node node2;
                 Btree.read((char *) &node2, sizeof(node2));
                 header.val[0] = node2.val[0];
+
+                int nodeIndex= (root.val[root.size/2 -1]<RecordID)?place2:place1;
+
                 splitRootLeaf(root, node1, node2, place1, place2, RecordID, Reference);
                 Btree.seekp(0, ios::beg);
                 Btree.write((char *) &header, sizeof(root));
@@ -388,7 +393,7 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
                 Btree.seekp(sizeof(header) * place2, ios::beg);
                 Btree.write((char *) &node2, sizeof(root));
                 Btree.close();
-                return 0;
+                return nodeIndex;
             }
         } else {
 
@@ -441,7 +446,7 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
                     }
                 }
                 Btree.close();
-                return 0;
+                return indx;
             }
             else {
                 // here we need to split the leaf
@@ -461,6 +466,7 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
                 header.val[0] = node1.val[0];
                 //split
                 int oldMax = target.val[target.size - 2];
+                int nodeIndex=(target.val[target.size/2 -1] <RecordID)?place1:indx;
                 pair<int, int> ans = splitLeaf(target, node1, RecordID, Reference);
 
                 Btree.seekp(place1 * sizeof(header), ios::beg);
@@ -520,7 +526,7 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
                         Btree.write((char *) &node2, sizeof(header));
                     }
                     Btree.close();
-                    return 0;
+                    return nodeIndex;
                 } else {
 
                     int parentindx = visited.second[visited.second.size() - 1];
@@ -643,9 +649,8 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
                             Btree.write((char *) &node2, sizeof(header));
                         }
                         Btree.close();
-                        return 0;
+                        return nodeIndex;
                     }
-
                 }
             }
         }
@@ -920,9 +925,10 @@ void DeleteRecordFromIndex (const char * filename, int RecordID) {
         }
         /// merge
         else{
+            int mergeNewMax=-1;
             if(siblingB.nonLeaf!=-1)
             {
-                pair<int,int>mergeOldMax =mergeNodes(siblingB,ToDeleteFrom,sizeB,result.second);
+                mergeNewMax =mergeNodes(siblingB,ToDeleteFrom,sizeB,result.second);
                 Btree.seekp(indxofNode*sizeof(ToDeleteFrom),ios::beg);
                 ToDeleteFrom.val[0] = header.val[0];
                 header.val[0] = indxofNode;
@@ -951,17 +957,21 @@ void DeleteRecordFromIndex (const char * filename, int RecordID) {
                 Btree.read((char *) &parentNode, sizeof(parentNode));
                 for (int i = 1; i < parentNode.size; i+=2) {
                     if(parentNode.val[i] == indxofNode){
-                        parentNode.val[i] = -1;
-                        parentNode.val[i-1] = -1;
                         parentNode.val[i-3] = result.first;
+                        int j=i-1;
+                        while((j+2)<parentNode.size){
+                            parentNode.val[j]=parentNode.val[j+2];
+                            j++;
+                        }
+                        parentNode.val[parentNode.size-2]=-1;
+                        parentNode.val[parentNode.size-1]=-1;
                         break;
                     }
                 }
-
-
+                return;
             }
             else{
-                mergeNodes(ToDeleteFrom,siblingA,result.second,sizeA);
+                mergeNewMax=mergeNodes(ToDeleteFrom,siblingA,result.second,sizeA);
                 Btree.seekp(indxA*sizeof(siblingA),ios::beg);
                 siblingA.val[0] = header.val[0];
                 header.val[0] = indxA;
@@ -976,7 +986,7 @@ void DeleteRecordFromIndex (const char * filename, int RecordID) {
                             int j;
                             for (j = 0; j < target.size; j += 2) {
                                 if (target.val[j]==RecordID ) {
-                                    target.val[j] = result.first;
+                                    target.val[j] = mergeNewMax;
                                     break;
                                 }
 
@@ -990,81 +1000,87 @@ void DeleteRecordFromIndex (const char * filename, int RecordID) {
                 Btree.read((char *) &parentNode, sizeof(parentNode));
                 for (int i = 1; i < parentNode.size; i+=2) {
                     if(parentNode.val[i] == indxA){
-                        parentNode.val[i] = -1;
-                        parentNode.val[i-1] = -1;
-                        parentNode.val[i-3] = result.first;
+                        parentNode.val[i-3] = mergeNewMax;
+                        int j=i-1;
+                        while((j+2)<parentNode.size){
+                            parentNode.val[j]=parentNode.val[j+2];
+                            j++;
+                        }
+                        parentNode.val[parentNode.size-2]=-1;
+                        parentNode.val[parentNode.size-1]=-1;
+                        break;
                     }
                 }
+                return;
             }
         }
     }
-
 }
-pair<int,int> mergeNodes(node& node1,node& node2,int size1, int size2){
-    int max1 = node1.val[size1*2-2];
-    int max2 = node2.val[size2*2-2];
+int mergeNodes(node& node1,node& node2,int size1, int size2){
+    int max1 = node2.val[size2*2-2];
     for (int i = size1*2, j =0; i < node1.size and j<size2*2; ++i,j++) {
         node1.val[i] = node2.val[j];
     }
     for(int i = 0; i<size2*2;i++)
         node2.val[i] = -1;
     node2.nonLeaf = -1;
-    return{max1,max2};
+    return max1;
 }
 
 int main() {
+    MainMenu();
+    /*
     string name = "btree.bin";
     const char *filename = name.c_str();
     CreateIndexFileFile(filename, 10, 5);
     DisplayIndexFileContent(filename);
-
-    InsertNewRecordAtIndex(filename, 3, 12);
-    InsertNewRecordAtIndex(filename, 7, 24);
-    InsertNewRecordAtIndex(filename, 10, 48);
-    InsertNewRecordAtIndex(filename, 24, 60);
-    InsertNewRecordAtIndex(filename, 14, 72);
+    cout<<InsertNewRecordAtIndex(filename, 3, 12)<<endl;
+    cout<<InsertNewRecordAtIndex(filename, 7, 24)<<endl;
+    cout<<InsertNewRecordAtIndex(filename, 10, 48)<<endl;
+    cout<<InsertNewRecordAtIndex(filename, 24, 60)<<endl;
+    cout<<InsertNewRecordAtIndex(filename, 14, 72)<<endl;
     DisplayIndexFileContent(filename);
 
-    InsertNewRecordAtIndex(filename, 19, 84);
+    cout<<InsertNewRecordAtIndex(filename, 19, 84)<<endl;
     DisplayIndexFileContent(filename);
 
-    InsertNewRecordAtIndex(filename, 30, 96);
+    cout<<InsertNewRecordAtIndex(filename, 30, 96)<<endl;
     DisplayIndexFileContent(filename);
 
-    InsertNewRecordAtIndex(filename, 15, 108);
+    cout<<InsertNewRecordAtIndex(filename, 15, 108)<<endl;
     DisplayIndexFileContent(filename);
 
-    InsertNewRecordAtIndex(filename, 1, 120);
+    cout<< InsertNewRecordAtIndex(filename, 1, 120)<<endl;
     DisplayIndexFileContent(filename);
 
-    InsertNewRecordAtIndex(filename, 5, 132);
+    cout<<InsertNewRecordAtIndex(filename, 5, 132)<<endl;
     DisplayIndexFileContent(filename);
 
-    InsertNewRecordAtIndex(filename, 2, 75);
+    cout<< InsertNewRecordAtIndex(filename, 2, 75)<<endl;
     DisplayIndexFileContent(filename);
 
-    InsertNewRecordAtIndex(filename, 8, 156);
+    cout<< InsertNewRecordAtIndex(filename, 8, 156)<<endl;
     DisplayIndexFileContent(filename);
 
-    InsertNewRecordAtIndex(filename, 9, 168);
+    cout<<InsertNewRecordAtIndex(filename, 9, 168)<<endl;
     DisplayIndexFileContent(filename);
 
-    InsertNewRecordAtIndex(filename, 6, 180);
+    cout<<InsertNewRecordAtIndex(filename, 6, 180)<<endl;
     DisplayIndexFileContent(filename);
 
-    InsertNewRecordAtIndex(filename, 11, 192);
+    cout<< InsertNewRecordAtIndex(filename, 11, 192)<<endl;
     DisplayIndexFileContent(filename);
 
-    InsertNewRecordAtIndex(filename, 12, 204);
+    cout<<InsertNewRecordAtIndex(filename, 12, 204)<<endl;
     DisplayIndexFileContent(filename);
 
-    InsertNewRecordAtIndex(filename, 17, 217);
+    cout<<InsertNewRecordAtIndex(filename, 17, 217)<<endl;
     DisplayIndexFileContent(filename);
 
-    InsertNewRecordAtIndex(filename, 18, 228);
+    cout<<InsertNewRecordAtIndex(filename, 18, 228)<<endl;
     DisplayIndexFileContent(filename);
 
-    InsertNewRecordAtIndex(filename, 32, 240);
+    cout<<InsertNewRecordAtIndex(filename, 32, 240)<<endl;
     DisplayIndexFileContent(filename);
 
     DeleteRecordFromIndex(filename,10);
@@ -1078,10 +1094,67 @@ int main() {
 
 
     cout << SearchARecord(filename, 5) << endl;
+
     cout << SearchARecord(filename, 1) << endl;
+
     cout << SearchARecord(filename, 20) << endl;
+
     cout << SearchARecord(filename, 19) << endl;
     cout << SearchARecord(filename, 1) << endl;
     cout << SearchARecord(filename, 10) << endl;
+     */
     return 0;
+}
+void MainMenu(){
+    string name = "btree.bin";
+    const char *filename = name.c_str();
+    cout<<"Enter the number of nodes: ";
+    int numberOfNodes;cin>>numberOfNodes;
+    cout<<"Enter The number of values stored in each node: ";
+    int numberOfValues;cin>>numberOfValues;
+    CreateIndexFileFile(filename, numberOfNodes, numberOfValues);
+    cout<<"BTree Created successufully: "<<endl;
+    DisplayIndexFileContent(filename);
+    int choice=-1;
+    do{
+        cout<<"1-Insert"<<endl;
+        cout<<"2-Search"<<endl;
+        cout<<"3-Delete"<<endl;
+        cout<<"4-Display"<<endl;
+        cout<<"4-Exit"<<endl;
+        cin>>choice;
+        switch (choice) {
+            case 1:{
+                cout<<"Enter the value to insert with its reference in DataFile: ";
+                int value,ref;cin>>value>>ref;
+                cout<<"The value is placed in node: "<<InsertNewRecordAtIndex(filename,value,ref)<<endl;
+                DisplayIndexFileContent(filename);
+                break;
+            }
+            case 2:{
+                cout<<"Enter the value to search for: ";
+                int value;cin>>value;
+                int ref= SearchARecord(filename,value);
+                if(ref==-1)
+                    cout<<"This value doesn't exist"<<endl;
+                cout<<"This value is stored in offset "<<ref<<" in the DataFile"<<endl;
+                break;
+            }
+            case 3:{
+                cout<<"Enter the value to delete: ";
+                int value;cin>>value;
+                DeleteRecordFromIndex(filename,value);
+                DisplayIndexFileContent(filename);
+                break;
+            }
+            case 4: {
+                DisplayIndexFileContent(filename);
+                break;
+            }
+            default:
+                cout << "choose a valid option!" << endl;
+                break;
+        }
+    }while(choice!=5);
+
 }
