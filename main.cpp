@@ -34,6 +34,7 @@ pair<int,int> deleteFromNode(node& ToDeleteFrom,int RecordID);
 void DeleteRecordFromIndex (const char * filename, int RecordID);
 
 int mergeNodes(node& node1,node& node2,int size1, int size2);
+
 void MainMenu();
 /// Declarations
 
@@ -371,11 +372,13 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
             //tree is 1 level, root is full-> split
             if (!flag) {
                 int place1 = header.val[0];
+                if(place1==-1)return -1;
                 Btree.seekg(header.val[0] * sizeof(header), ios::beg);
                 node node1;
                 Btree.read((char *) &node1, sizeof(node1));
 
                 int place2 = node1.val[0];
+                if(place2==-1)return -1;
                 Btree.seekg(node1.val[0] * sizeof(node1), ios::beg);
                 node node2;
                 Btree.read((char *) &node2, sizeof(node2));
@@ -460,6 +463,7 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
                 ///split the leaf into two leaves
                 //take empty node
                 int place1 = header.val[0];
+                if(place1==-1)return -1;
                 Btree.seekg(header.val[0] * sizeof(header), ios::beg);
                 node node1;
                 Btree.read((char *) &node1, sizeof(node1));
@@ -505,12 +509,14 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
                         /// if root not empty split root then put the split leaves
                     else {
                         int place2 = header.val[0];
+                        if(place2==-1)return -1;
                         Btree.seekg(header.val[0] * sizeof(header), ios::beg);
                         node node2;
                         Btree.read((char *) &node2, sizeof(node1));
                         header.val[0] = node2.val[0];
 
                         int place3 = header.val[0];
+                        if(place3==-1)return -1;
                         Btree.seekg(header.val[0] * sizeof(header), ios::beg);
                         node node3;
                         Btree.read((char *) &node3, sizeof(node1));
@@ -567,6 +573,7 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
                             node node4;
                             Btree.read((char *) &node4, sizeof(node4));
                             int place4 = header.val[0];
+                            if(place4==-1)return -1;
                             header.val[0] = node4.val[0];
 
                             int parentMax=parent.val[parent.size-2];
@@ -628,12 +635,14 @@ int InsertNewRecordAtIndex(const char *filename, int RecordID, int Reference) {
                             }
                         }else{
                             int place2 = header.val[0];
+                            if(place2==-1)return -1;
                             Btree.seekg(header.val[0] * sizeof(header), ios::beg);
                             node node2;
                             Btree.read((char *) &node2, sizeof(node1));
                             header.val[0] = node2.val[0];
 
                             int place3 = header.val[0];
+                            if(place3==-1)return -1;
                             Btree.seekg(header.val[0] * sizeof(header), ios::beg);
                             node node3;
                             Btree.read((char *) &node3, sizeof(node1));
@@ -1127,7 +1136,11 @@ void MainMenu(){
             case 1:{
                 cout<<"Enter the value to insert with its reference in DataFile: ";
                 int value,ref;cin>>value>>ref;
-                cout<<"The value is placed in node: "<<InsertNewRecordAtIndex(filename,value,ref)<<endl;
+                int place=InsertNewRecordAtIndex(filename,value,ref);
+                if(place==-1)
+                    cout<<"There is no Empty place to Insert try to delete."<<endl;
+                else
+                    cout<<"The value is placed in node: "<<place<<endl;
                 DisplayIndexFileContent(filename);
                 break;
             }
