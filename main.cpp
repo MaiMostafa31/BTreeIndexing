@@ -33,6 +33,7 @@ pair<int,int> deleteFromNode(node& ToDeleteFrom,int RecordID);
 
 void DeleteRecordFromIndex (const char * filename, int RecordID);
 
+pair<int,int> mergeNodes(node& node1,node& node2,int size1, int size2);
 /// Declarations
 
 pair<int, vector<int>> getLeaf(const char *filename, node &root, int id) {
@@ -772,9 +773,13 @@ void DeleteRecordFromIndex (const char * filename, int RecordID) {
     if(visited.second.size()==1)
     {
         if(ToDeleteFrom.val[0]==-1)
+        {
+            ToDeleteFrom.val[0] = header.val[0];
             header.val[0] = 1;
+        }
         return;
     }
+    /// Delete with no underflow
     if(result.second>= floor(ToDeleteFrom.size/4))
     {
         if(result.first<RecordID){
@@ -806,27 +811,27 @@ void DeleteRecordFromIndex (const char * filename, int RecordID) {
         Btree.seekg(indxOfParent*sizeof(ToDeleteFrom));
         Btree.read((char*)&parent,sizeof(parent));
         int indxInParent = 0;
-        int j = 0;
-        for(int i = 0 ; i < parent.size; i+=2,j++)
+        for(int i = 0 ; i < parent.size; i+=2)
         {
             if(parent.val[i]>=RecordID)
             {
-                indxInParent = j;
+                indxInParent = i;
                 break;
             }
         }
         node siblingB, siblingA;
+        int indxB,indxA;
         /// if there is a right sibling
-        if(indxInParent-1>=0)
+        if(indxInParent-2>=0)
         {
-            int indxB = parent.val[indxInParent*2-1];
+            indxB = parent.val[indxInParent-1];
             Btree.seekg(indxB*sizeof(ToDeleteFrom));
             Btree.read((char*)&siblingB,sizeof(siblingB));
         }
         ///if there is a left sibling
-        if(parent.val[indxInParent*2+2]!=-1)
+        if(parent.val[indxInParent+2]!=-1)
         {
-            int indxA = parent.val[indxInParent*2+3];
+            indxA = parent.val[indxInParent+3];
             Btree.seekg(indxA*sizeof(ToDeleteFrom));
             Btree.read((char*)&siblingA,sizeof(siblingA));
         }
@@ -843,7 +848,7 @@ void DeleteRecordFromIndex (const char * filename, int RecordID) {
             else
                 break;
         }
-        bool take = false;
+        bool redistribute = false;
         /// if taking from left sibling doesn't cause underflow
         if(sizeB-1>=floor(siblingB.size/4) and siblingB.nonLeaf!=-1)
         {
@@ -858,7 +863,7 @@ void DeleteRecordFromIndex (const char * filename, int RecordID) {
                     ToDeleteFrom.val[i]= newElement;
                     ToDeleteFrom.val[i+1] = newRef;
                     sortNode(ToDeleteFrom.val,i+1);
-                    take = true;
+                    redistribute = true;
                     break;
                 }
             }
@@ -882,7 +887,7 @@ void DeleteRecordFromIndex (const char * filename, int RecordID) {
             return;
         }
         /// if taking from right sibling doesn't cause underflow
-        else if(sizeA-1>=floor(siblingA.size/4) and siblingB.nonLeaf!=-1 and !take){
+        else if(sizeA-1>=floor(siblingA.size/4) and siblingB.nonLeaf!=-1 and !redistribute){
             int newElement = siblingA.val[0];
             int newRef = siblingA.val[1];
             deleteFromNode(siblingA,newElement);
@@ -892,7 +897,7 @@ void DeleteRecordFromIndex (const char * filename, int RecordID) {
                     ToDeleteFrom.val[i]= newElement;
                     ToDeleteFrom.val[i+1] = newRef;
                     sortNode(ToDeleteFrom.val,i+1);
-                    take = true;
+                    redistribute = true;
                     break;
                 }
             }
@@ -913,9 +918,98 @@ void DeleteRecordFromIndex (const char * filename, int RecordID) {
             }
             return;
         }
+        /// merge
+        else{
+            if(siblingB.nonLeaf!=-1)
+            {
+                pair<int,int>mergeOldMax =mergeNodes(siblingB,ToDeleteFrom,sizeB,result.second);
+                Btree.seekp(indxofNode*sizeof(ToDeleteFrom),ios::beg);
+                ToDeleteFrom.val[0] = header.val[0];
+                header.val[0] = indxofNode;
+                Btree.write((char*)&ToDeleteFrom,sizeof(ToDeleteFrom));
+                if(result.first<RecordID)
+                {
+                    node target;
+                    for (int i = 0; i < visited.second.size()-2; i++) {
+                        Btree.seekp(visited.second[i] * sizeof(ToDeleteFrom), ios::beg);
+                        Btree.read((char *) &target, sizeof(ToDeleteFrom));
+                        if (target.nonLeaf) {
+                            int j;
+                            for (j = 0; j < target.size; j += 2) {
+                                if (target.val[j]==RecordID ) {
+                                    target.val[j] = result.first;
+                                    break;
+                                }
+
+                            }
+                        }
+                    }
+                }
+                int parentIndex = visited.second[visited.second.size()-2];
+                node parentNode;
+                Btree.seekp(parentIndex * sizeof(parentNode), ios::beg);
+                Btree.read((char *) &parentNode, sizeof(parentNode));
+                for (int i = 1; i < parentNode.size; i+=2) {
+                    if(parentNode.val[i] == indxofNode){
+                        parentNode.val[i] = -1;
+                        parentNode.val[i-1] = -1;
+                        parentNode.val[i-3] = result.first;
+                        break;
+                    }
+                }
+
+
+            }
+            else{
+                mergeNodes(ToDeleteFrom,siblingA,result.second,sizeA);
+                Btree.seekp(indxA*sizeof(siblingA),ios::beg);
+                siblingA.val[0] = header.val[0];
+                header.val[0] = indxA;
+                Btree.write((char*)&siblingA,sizeof(siblingA));
+                if(result.first<RecordID)
+                {
+                    node target;
+                    for (int i = 0; i < visited.second.size()-2; i++) {
+                        Btree.seekp(visited.second[i] * sizeof(ToDeleteFrom), ios::beg);
+                        Btree.read((char *) &target, sizeof(ToDeleteFrom));
+                        if (target.nonLeaf) {
+                            int j;
+                            for (j = 0; j < target.size; j += 2) {
+                                if (target.val[j]==RecordID ) {
+                                    target.val[j] = result.first;
+                                    break;
+                                }
+
+                            }
+                        }
+                    }
+                }
+                int parentIndex = visited.second[visited.second.size()-2];
+                node parentNode;
+                Btree.seekp(parentIndex * sizeof(parentNode), ios::beg);
+                Btree.read((char *) &parentNode, sizeof(parentNode));
+                for (int i = 1; i < parentNode.size; i+=2) {
+                    if(parentNode.val[i] == indxA){
+                        parentNode.val[i] = -1;
+                        parentNode.val[i-1] = -1;
+                        parentNode.val[i-3] = result.first;
+                    }
+                }
+            }
+        }
     }
 
-
+}
+pair<int,int> mergeNodes(node& node1,node& node2,int size1, int size2){
+    int max1 = node1.val[size1*2-2];
+    int max2 = node2.val[size2*2-2];
+    for (int i = size1*2, j =0; i < node1.size and j<size2*2; ++i,j++) {
+        node1.val[i] = node2.val[j];
+    }
+    for(int i = 0; i<size2*2;i++)
+        node2.val[i] = -1;
+    node2.nonLeaf = -1;
+    return{max1,max2};
 }
 
 int main() {
@@ -977,6 +1071,9 @@ int main() {
     DisplayIndexFileContent(filename);
 
     DeleteRecordFromIndex(filename,9);
+    DisplayIndexFileContent(filename);
+
+    DeleteRecordFromIndex(filename,8);
     DisplayIndexFileContent(filename);
 
 
