@@ -732,8 +732,9 @@ pair<int,vector<int>> searchToDelete(const char *filename, int RecordID) {
 
 pair<int,int> deleteFromNode(node& ToDeleteFrom,int RecordID){
     vector<pair<int,int>>v;
-    for (int i = 0; i < ToDeleteFrom.size and ToDeleteFrom.val[i]!=RecordID; i+=2) {
-        v.push_back({ToDeleteFrom.val[i],ToDeleteFrom.val[i+1]});
+    for (int i = 0; i < ToDeleteFrom.size and ToDeleteFrom.val[i]!=-1; i+=2) {
+        if(ToDeleteFrom.val[i]!=RecordID )
+            v.push_back({ToDeleteFrom.val[i],ToDeleteFrom.val[i+1]});
     }
     int j = 0,max = -1;
     for (int i = 0; i < v.size(); ++i) {
@@ -755,7 +756,9 @@ void DeleteRecordFromIndex (const char * filename, int RecordID) {
     pair<int,vector<int>> visited = searchToDelete(filename,RecordID);
     fstream Btree;
     Btree.open(filename, ios::in | ios::out | ios::binary);
-
+    node header;
+    Btree.seekg(0,ios::beg);
+    Btree.read((char*)&header,sizeof(header));
     if(visited.first==-1)
     {
         cout<<"Record not found"<<endl;
@@ -766,6 +769,12 @@ void DeleteRecordFromIndex (const char * filename, int RecordID) {
     Btree.seekg(indxofNode*sizeof(ToDeleteFrom),ios::beg);
     Btree.read((char*)&ToDeleteFrom,sizeof(ToDeleteFrom));
     pair<int,int>result = deleteFromNode(ToDeleteFrom,RecordID);
+    if(visited.second.size()==1)
+    {
+        if(ToDeleteFrom.val[0]==-1)
+            header.val[0] = 1;
+        return;
+    }
     if(result.second>= floor(ToDeleteFrom.size/4))
     {
         if(result.first<RecordID){
@@ -792,10 +801,117 @@ void DeleteRecordFromIndex (const char * filename, int RecordID) {
     }
     else{
         ///underflow condition
-        if(visited.first>0)
+        node parent;
+        int indxOfParent = visited.second[visited.second.size()-2];
+        Btree.seekg(indxOfParent*sizeof(ToDeleteFrom));
+        Btree.read((char*)&parent,sizeof(parent));
+        int indxInParent = 0;
+        int j = 0;
+        for(int i = 0 ; i < parent.size; i+=2,j++)
         {
-            ///get the sibiling before
+            if(parent.val[i]>=RecordID)
+            {
+                indxInParent = j;
+                break;
+            }
+        }
+        node siblingB, siblingA;
+        /// if there is a right sibling
+        if(indxInParent-1>=0)
+        {
+            int indxB = parent.val[indxInParent*2-1];
+            Btree.seekg(indxB*sizeof(ToDeleteFrom));
+            Btree.read((char*)&siblingB,sizeof(siblingB));
+        }
+        ///if there is a left sibling
+        if(parent.val[indxInParent*2+2]!=-1)
+        {
+            int indxA = parent.val[indxInParent*2+3];
+            Btree.seekg(indxA*sizeof(ToDeleteFrom));
+            Btree.read((char*)&siblingA,sizeof(siblingA));
+        }
+        int sizeB = 0, sizeA = 0;
+        for (int i = 0; i < siblingB.size; i+=2) {
+            if(siblingB.val[i]!=-1)
+                sizeB++;
+            else
+                break;
+        }
+        for (int i = 0; i < siblingA.size; i+=2) {
+            if(siblingA.val[i]!=-1)
+                sizeA++;
+            else
+                break;
+        }
+        bool take = false;
+        /// if taking from left sibling doesn't cause underflow
+        if(sizeB-1>=floor(siblingB.size/4) and siblingB.nonLeaf!=-1)
+        {
+            int newElement = siblingB.val[sizeB*2-2];
+            int newRef = siblingB.val[sizeB*2-1];
+            int newMaxB = siblingB.val[sizeB*2-4];
+            siblingB.val[sizeB*2-2] = -1;
+            siblingB.val[sizeB*2-1] = -1;
+            for (int i = 0; i < ToDeleteFrom.size; i+=2) {
+                if(ToDeleteFrom.val[i]==-1)
+                {
+                    ToDeleteFrom.val[i]= newElement;
+                    ToDeleteFrom.val[i+1] = newRef;
+                    sortNode(ToDeleteFrom.val,i+1);
+                    take = true;
+                    break;
+                }
+            }
+            /// fix max values among all levels visited
+            node target;
+            for (auto &it: visited.second) {
+                Btree.seekp(it * sizeof(ToDeleteFrom), ios::beg);
+                Btree.read((char *) &target, sizeof(ToDeleteFrom));
+                if (target.nonLeaf) {
+                    int j;
+                    for (j = 0; j < target.size; j += 2) {
+                        if (target.val[j]== RecordID) {
+                            target.val[j] = result.first;
+                        }
+                        if(target.val[j] == newElement) {
+                            target.val[j] = newMaxB;
+                        }
+                    }
+                }
+            }
+            return;
+        }
+        /// if taking from right sibling doesn't cause underflow
+        else if(sizeA-1>=floor(siblingA.size/4) and siblingB.nonLeaf!=-1 and !take){
+            int newElement = siblingA.val[0];
+            int newRef = siblingA.val[1];
+            deleteFromNode(siblingA,newElement);
+            for (int i = 0; i < ToDeleteFrom.size; i+=2) {
+                if(ToDeleteFrom.val[i]==-1)
+                {
+                    ToDeleteFrom.val[i]= newElement;
+                    ToDeleteFrom.val[i+1] = newRef;
+                    sortNode(ToDeleteFrom.val,i+1);
+                    take = true;
+                    break;
+                }
+            }
+            node target;
+            for (auto &it: visited.second) {
+                Btree.seekp(it * sizeof(ToDeleteFrom), ios::beg);
+                Btree.read((char *) &target, sizeof(ToDeleteFrom));
+                if (target.nonLeaf) {
+                    int j;
+                    for (j = 0; j < target.size; j += 2) {
+                        if (target.val[j]== result.first) {
+                            target.val[j] = newElement;
+                            break;
+                        }
 
+                    }
+                }
+            }
+            return;
         }
     }
 
@@ -860,76 +976,15 @@ int main() {
     DeleteRecordFromIndex(filename,10);
     DisplayIndexFileContent(filename);
 
+    DeleteRecordFromIndex(filename,9);
+    DisplayIndexFileContent(filename);
+
+
     cout << SearchARecord(filename, 5) << endl;
     cout << SearchARecord(filename, 1) << endl;
     cout << SearchARecord(filename, 20) << endl;
     cout << SearchARecord(filename, 19) << endl;
     cout << SearchARecord(filename, 1) << endl;
     cout << SearchARecord(filename, 10) << endl;
-
-//    InsertNewRecordAtIndex(filename, 100, 84);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 11, 96);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 31, 108);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 51, 120);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 71, 132);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 91, 75);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 35, 156);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 60, 168);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 94, 180);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 54, 192);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 14, 204);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 33, 217);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 40, 228);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 74, 240);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 20, 204);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 93, 217);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 13, 228);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 53, 240);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 72, 204);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 52, 217);
-//    DisplayIndexFileContent(filename);
-//
-//    InsertNewRecordAtIndex(filename, 55, 228);
-//    DisplayIndexFileContent(filename);
-
-
     return 0;
 }

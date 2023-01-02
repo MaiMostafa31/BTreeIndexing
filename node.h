@@ -7,7 +7,9 @@ public:
     int size;
     int *val;
 
-    node(){}
+    node(){
+        this->nonLeaf=-1;
+    }
     node(int m, int next) {
         this->size = m * 2;
         this->nonLeaf = -1;
